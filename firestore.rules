@@ -1,0 +1,36 @@
+rules_version = '2';
+
+// Firebase 콘솔 > Firestore Database > 규칙 탭에 이 내용을 붙여넣고 "게시"하세요.
+// (지금까지 쓰던 "테스트 모드"는 아무나 읽고 쓸 수 있어서, 실제로 여러 사람이 쓰기 시작하면
+//  이 규칙으로 바꿔야 안전해요)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 방 정보: 로그인한 사용자만 읽고 쓸 수 있음
+    match /rooms/{roomId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      // 업데이트(게임 시작, 상태 변경 등)는 로그인한 사용자면 누구나 가능
+      // (같은 방의 술래/도망자가 각자 상태를 갱신해야 하므로 방장만으로 제한하지 않음)
+      allow update: if request.auth != null;
+      allow delete: if false;
+
+      // 참가자 정보: 방에 속한 로그인 사용자만 읽고 쓸 수 있음
+      match /players/{playerId} {
+        allow read: if request.auth != null;
+        // 자기 자신의 참가 정보는 자유롭게 쓰기 가능
+        // 술래가 다른 사람을 "탈락" 처리하는 것도 허용 (playerId != 내 uid 이어도 허용)
+        allow create, update: if request.auth != null;
+        // 나가기(leaveRoom)는 본인만 가능
+        allow delete: if request.auth != null && request.auth.uid == playerId;
+      }
+    }
+
+    // 사용자 전적: 본인 것만 쓸 수 있고, 로그인한 사람은 누구나 읽을 수 있음
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

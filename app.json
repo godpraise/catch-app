@@ -1,0 +1,75 @@
+{
+  "expo": {
+    "name": "찍히면 아웃",
+    "slug": "catch-app",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F5F4F0"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.yourname.catchapp",
+      "infoPlist": {
+        "NSCameraUsageDescription": "술래가 도망자를 촬영하기 위해 카메라 접근이 필요해요.",
+        "NSLocationWhenInUseUsageDescription": "게임 중 술래와 도망자 사이의 대략적인 거리(뜨거워요/차가워요)를 알려주기 위해 위치 정보가 필요해요."
+      }
+    },
+    "android": {
+      "package": "com.yourname.catchapp",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F5F4F0"
+      },
+      "permissions": [
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "술래가 도망자를 촬영하기 위해 카메라 접근이 필요해요."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "게임 중 술래와 도망자 사이의 대략적인 거리(뜨거워요/차가워요)를 알려주기 위해 위치 정보가 필요해요."
+        }
+      ],
+      [
+        "@react-native-seoul/kakao-login",
+        {
+          "kakaoAppKey": "YOUR_KAKAO_NATIVE_APP_KEY",
+          "overrideKakaoSDKVersion": "2.11.2",
+          "kotlinVersion": "1.9.0"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraMavenRepos": [
+              "https://devrepo.kakao.com/nexus/content/groups/public/"
+            ],
+            "kotlinVersion": "1.9.24"
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}
