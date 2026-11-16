@@ -1,0 +1,7 @@
+{
+ "name":"catch-app-security-tests",
+ "private":true,
+ "type":"module",
+ "scripts":{"test":"firebase emulators:exec --config ../firebase.json --project demo-catch-role-validation --only firestore,storage \"node --test roles.rules.test.mjs\""},
+ "devDependencies":{"@firebase/rules-unit-testing":"6.0.0","firebase":"13.3.0","firebase-tools":"15.36.0"}
+}

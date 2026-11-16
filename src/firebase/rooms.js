@@ -18,8 +18,11 @@ import {
   query,
   where,
   getDocs,
+  getDoc,
+  runTransaction,
+  writeBatch,
 } from 'firebase/firestore';
-import { db, storage } from './config';
+import { db, storage, auth } from './config';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // 6자리 초대 코드 생성 (숫자+대문자, 헷갈리는 0/O, 1/I 제외)
@@ -32,55 +35,41 @@ function generateRoomCode() {
   return code;
 }
 
-// 방 생성 (방장이 호출)
-export async function createRoom({ hostId, hostNickname, hostProfileImage, maxPlayers, hideTimeSec, timeLimitSec }) {
-  const roomCode = generateRoomCode();
-  const roomRef = doc(db, 'rooms', roomCode);
-
-  await setDoc(roomRef, {
-    hostId,
-    status: 'waiting', // waiting | hiding | playing | ended
-    maxPlayers,
-    hideTimeSec,
-    timeLimitSec,
-    createdAt: serverTimestamp(),
-    startedAt: null,
-  });
-
-  await setDoc(doc(db, 'rooms', roomCode, 'players', hostId), {
-    nickname: hostNickname,
-    profileImage: hostProfileImage,
-    role: null,
-    status: 'alive',
-    caughtAt: null,
-    caughtBy: null,
-    caughtPhotoUrl: null,
-    missionType: null,
-    missionStatus: null,
-    missionAssignedAt: null,
-    missionPhotoUrl: null,
-    joinedAt: serverTimestamp(),
-  });
-
-  return roomCode;
+function initialPlayer(nickname, profileImage) {
+  return { nickname, profileImage: profileImage || null, role: null, status: 'alive',
+    caughtAt: null, caughtBy: null, caughtPhotoUrl: null, missionType: null,
+    missionStatus: null, missionAssignedAt: null, missionPhotoUrl: null,
+    joinedAt: serverTimestamp(), roundId: 0 };
 }
 
-// 초대 코드로 방 참가
+// Room and host membership are created atomically; existing codes cannot be overwritten.
+export async function createRoom({ hostId, hostNickname, hostProfileImage, maxPlayers, hideTimeSec, timeLimitSec }) {
+  if (auth.currentUser?.uid !== hostId) throw new Error('authenticated-host-required');
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const code = generateRoomCode();
+    try {
+      await runTransaction(db, async (tx) => {
+        const roomRef = doc(db, 'rooms', code);
+        if ((await tx.get(roomRef)).exists()) throw new Error('invite-code-conflict');
+        tx.set(roomRef, { hostId, status: 'waiting', maxPlayers, hideTimeSec, timeLimitSec,
+          createdAt: serverTimestamp(), startedAt: null, taggerId: null, roundId: 0 });
+        tx.set(doc(db, 'rooms', code, 'players', hostId), initialPlayer(hostNickname, hostProfileImage));
+      });
+      return code;
+    } catch (error) { if (error.message !== 'invite-code-conflict') throw error; }
+  }
+  throw new Error('invite-code-unavailable');
+}
+
 export async function joinRoom({ roomCode, userId, nickname, profileImage }) {
-  const playerRef = doc(db, 'rooms', roomCode, 'players', userId);
-  await setDoc(playerRef, {
-    nickname,
-    profileImage,
-    role: null,
-    status: 'alive',
-    caughtAt: null,
-    caughtBy: null,
-    caughtPhotoUrl: null,
-    missionType: null,
-    missionStatus: null,
-    missionAssignedAt: null,
-    missionPhotoUrl: null,
-    joinedAt: serverTimestamp(),
+  if (auth.currentUser?.uid !== userId) throw new Error('authenticated-player-required');
+  await runTransaction(db, async (tx) => {
+    const roomRef = doc(db, 'rooms', roomCode);
+    const playerRef = doc(db, 'rooms', roomCode, 'players', userId);
+    const room = await tx.get(roomRef);
+    if (!room.exists() || room.data().status !== 'waiting') throw new Error('room-not-waiting');
+    if ((await tx.get(playerRef)).exists()) return;
+    tx.set(playerRef, initialPlayer(nickname, profileImage));
   });
 }
 
@@ -99,33 +88,24 @@ export function subscribeToPlayers(roomCode, callback) {
   });
 }
 
-// 게임 시작: 참가자 중 랜덤 1명을 술래로 배정
+// All role resets and the new round are one host batch; rules validate the actor.
 export async function startGame(roomCode) {
+  const roomRef = doc(db, 'rooms', roomCode);
+  const room = await getDoc(roomRef);
+  if (!room.exists() || room.data().hostId !== auth.currentUser?.uid || !['waiting', 'ended'].includes(room.data().status)) throw new Error('host-start-required');
   const playersSnap = await getDocs(collection(db, 'rooms', roomCode, 'players'));
   const playerIds = playersSnap.docs.map((d) => d.id);
+  if (playerIds.length < 2 || playerIds.length > room.data().maxPlayers) throw new Error('invalid-player-count');
   const taggerId = playerIds[Math.floor(Math.random() * playerIds.length)];
-
-  const updates = playerIds.map((id) =>
-    updateDoc(doc(db, 'rooms', roomCode, 'players', id), {
-      role: id === taggerId ? 'tagger' : 'runner',
-      status: 'alive',
-      caughtAt: null,
-      caughtBy: null,
-      caughtPhotoUrl: null,
-      missionType: null,
-      missionStatus: null,
-      missionAssignedAt: null,
-      missionPhotoUrl: null,
-    })
-  );
-  await Promise.all(updates);
-
-  await updateDoc(doc(db, 'rooms', roomCode), {
-    status: 'hiding',
-    startedAt: serverTimestamp(),
-    taggerId,
-  });
-
+  const roundId = room.data().roundId + 1;
+  const batch = writeBatch(db);
+  playerIds.forEach((id) => batch.update(doc(db, 'rooms', roomCode, 'players', id), {
+    role: id === taggerId ? 'tagger' : 'runner', status: 'alive', roundId,
+    caughtAt: null, caughtBy: null, caughtPhotoUrl: null,
+    missionType: null, missionStatus: null, missionAssignedAt: null, missionPhotoUrl: null,
+  }));
+  batch.update(roomRef, { status: 'hiding', startedAt: serverTimestamp(), taggerId, roundId });
+  await batch.commit();
   return taggerId;
 }
 
@@ -146,11 +126,13 @@ export async function markPlayerCaught({ roomCode, playerId, caughtById, photoUr
 
 // 촬영한 사진을 Firebase Storage에 업로드하고 다운로드 URL 반환
 export async function uploadCatchPhoto({ roomCode, localUri }) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('authenticated-player-required');
   const response = await fetch(localUri);
   const blob = await response.blob();
   const fileName = `${Date.now()}.jpg`;
-  const photoRef = ref(storage, `rooms/${roomCode}/${fileName}`);
-  await uploadBytes(photoRef, blob);
+  const photoRef = ref(storage, `rooms/${roomCode}/${uid}/${fileName}`);
+  await uploadBytes(photoRef, blob, { contentType: 'image/jpeg' });
   return getDownloadURL(photoRef);
 }
 

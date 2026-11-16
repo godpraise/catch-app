@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+ match /b/{bucket}/o {
+  function member(c) { return request.auth != null && firestore.exists(/databases/(default)/documents/rooms/$(c)/players/$(request.auth.uid)); }
+  match /rooms/{c}/{u}/{fileName} {
+   allow read: if member(c);
+   allow create: if resource == null && member(c) && request.auth.uid == u
+    && firestore.get(/databases/(default)/documents/rooms/$(c)).data.status == 'playing'
+    && firestore.get(/databases/(default)/documents/rooms/$(c)/players/$(u)).data.roundId == firestore.get(/databases/(default)/documents/rooms/$(c)).data.roundId
+    && firestore.get(/databases/(default)/documents/rooms/$(c)/players/$(u)).data.status == 'alive'
+    && request.resource.size < 10 * 1024 * 1024 && request.resource.contentType == 'image/jpeg';
+   allow update, delete: if false;
+  }
+  match /{allPaths=**} { allow read, write: if false; }
+ }
+}
