@@ -13,7 +13,6 @@ import RunnerWaitingScreen from '../screens/RunnerWaitingScreen';
 import CaughtScreen from '../screens/CaughtScreen';
 import ResultScreen from '../screens/ResultScreen';
 import BehindTheScenesScreen from '../screens/BehindTheScenesScreen';
-import PlaceholderScreen from '../screens/PlaceholderScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -27,7 +26,6 @@ export default function AppNavigator() {
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
 
-        {/* 아래 화면들은 다음 개발 단계에서 실제 구현으로 교체 예정 */}
         <Stack.Screen name="RoomSetup" component={RoomSetupScreen} />
         <Stack.Screen name="JoinRoom" component={JoinRoomScreen} />
         <Stack.Screen name="WaitingRoom" component={WaitingRoomScreen} />
